@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Globe, Menu, X, Sun, Moon, Heart, Calculator, Map, Home, BookOpen, BarChart2, Hotel, LayoutDashboard } from 'lucide-react'
-import { useTheme } from '../../context/ThemeContext'
-import { useApp } from '../../context/AppContext'
+import { useTheme } from '@context/ThemeContext'
+import { useApp } from '@context/AppContext'
 
 const navLinks = [
   { to: '/',           label: 'Home',       icon: Home },
