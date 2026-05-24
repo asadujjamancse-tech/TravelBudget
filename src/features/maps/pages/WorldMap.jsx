@@ -1,54 +1,7 @@
 // FEATURE: WORLD MAP
-// PURPOSE: AI-powered interactive travel intelligence map — layers, search, routes, discovery
+// PURPOSE: World-class AI-powered travel intelligence platform — 10 layers, achievements, routes & discovery
 // DEPENDENCIES: @data/countries, @context/ThemeContext, @context/AppContext,
 //               @hooks/useLocalStorage, @hooks/usePageContext, react-leaflet, recharts
-
-// ─── ARCHITECTURE OVERVIEW ────────────────────────────────────────────────────
-//
-//  ┌─ AI Search ─────────────────────────────────────┐
-//  │  Intent-detection → filter + flyTo map          │
-//  └─────────────────────────────────────────────────┘
-//  ┌─ Layer Control ──────────────────────────────────┐
-//  │  8 data layers change marker colors + legend     │
-//  └─────────────────────────────────────────────────┘
-//  ┌─ MapContainer ──────────────────────────────────┐
-//  │  CartoDB tiles (dark/light auto-switch)          │
-//  │  Markers: color + size reflect active layer     │
-//  │  Polylines: 4 predefined travel routes           │
-//  │  MapController: flyTo / fitBounds inside map    │
-//  └──────────────────────────────┬──────────────────┘
-//                                 │ onClick
-//  ┌─ Country Panel (sidebar) ────▼──────────────────┐
-//  │  4 tabs: Overview | Budget | Hotels | Places     │
-//  │  + Visited tracker (localStorage)                │
-//  │  + Add to compare + bucket list                  │
-//  └─────────────────────────────────────────────────┘
-//
-// ─── DATA LAYERS ─────────────────────────────────────────────────────────────
-//
-//  budget   — green/orange/purple by daily backpacker cost tier
-//  safety   — emerald/amber/red by safety rating
-//  food     — orange highlights food-tagged countries
-//  adventure— teal highlights adventure-tagged countries
-//  beach    — cyan highlights beach/island/tropical-tagged countries
-//  visa     — green=free / amber=on arrival / red=required
-//  nomad    — scores countries by budget+safety+internet speed
-//  popular  — proxy for tourism density via highlights array length
-//
-// ─── AI SEARCH ───────────────────────────────────────────────────────────────
-//
-//  searchCountries() parses free-text intent without an API:
-//  "cheapest in Asia" → budget < 55 AND continent === Asia
-//  "safe beach" → safety=high AND beach tag
-//  "digital nomad" → good internet + low budget + safe
-//  Future upgrade: replace with OpenAI embeddings for semantic search.
-//
-// ─── PREDEFINED ROUTES ───────────────────────────────────────────────────────
-//
-//  4 routes drawn as Polylines (dashed animated lines).
-//  Add more routes to PREDEFINED_ROUTES — no other code changes needed.
-//
-// ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
@@ -56,10 +9,12 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
 import {
   MapPin, Filter, TrendingUp, DollarSign, Shield, ChevronRight,
   Search, X, Shuffle, Globe, Utensils, Wifi, Compass, Layers,
   Star, Heart, Eye, Check, Plane, Zap, ChevronDown,
+  Bookmark, Award, Thermometer, Music,
 } from 'lucide-react'
 import { countries } from '@data/countries'
 import { useTheme } from '@context/ThemeContext'
@@ -67,8 +22,7 @@ import { useApp } from '@context/AppContext'
 import { useLocalStorage } from '@hooks/useLocalStorage'
 import { usePageContext } from '@hooks/usePageContext'
 
-// ─── COORDINATES ─────────────────────────────────────────────────────────────
-// Kept here (not in countries.js) so map data stays separate from travel data.
+// ─── COORDINATES ──────────────────────────────────────────────────────────────
 const COORDS = {
   france:      [46.23,    2.21],
   italy:       [41.87,   12.57],
@@ -98,70 +52,93 @@ const COORDS = {
   colombia:    [4.57,   -74.30],
 }
 
-// ─── LAYER CONFIGURATION ─────────────────────────────────────────────────────
+// ─── 10 INTELLIGENCE LAYERS ───────────────────────────────────────────────────
 const LAYERS = [
-  { id: 'budget',    label: 'Budget',    Icon: DollarSign, desc: 'Daily cost tiers' },
-  { id: 'safety',    label: 'Safety',    Icon: Shield,     desc: 'Safety ratings' },
-  { id: 'food',      label: 'Food',      Icon: Utensils,   desc: 'Cuisine destinations' },
-  { id: 'adventure', label: 'Adventure', Icon: Compass,    desc: 'Outdoor & adventure' },
-  { id: 'beach',     label: 'Beach',     Icon: Globe,      desc: 'Coastal & island' },
-  { id: 'visa',      label: 'Visa',      Icon: Check,      desc: 'Entry requirements' },
-  { id: 'nomad',     label: 'Nomad',     Icon: Wifi,       desc: 'Remote work-friendly' },
-  { id: 'popular',   label: 'Trending',  Icon: TrendingUp, desc: 'Most visited' },
+  { id: 'budget',    label: 'Budget',    Icon: DollarSign,  desc: 'Daily cost tiers' },
+  { id: 'safety',    label: 'Safety',    Icon: Shield,      desc: 'Safety ratings' },
+  { id: 'food',      label: 'Food',      Icon: Utensils,    desc: 'Cuisine destinations' },
+  { id: 'adventure', label: 'Adventure', Icon: Compass,     desc: 'Outdoor & adventure' },
+  { id: 'beach',     label: 'Beach',     Icon: Globe,       desc: 'Coastal & island' },
+  { id: 'nightlife', label: 'Nightlife', Icon: Music,       desc: 'Party & entertainment' },
+  { id: 'weather',   label: 'Weather',   Icon: Thermometer, desc: 'Climate & temperature' },
+  { id: 'visa',      label: 'Visa',      Icon: Check,       desc: 'Entry requirements' },
+  { id: 'nomad',     label: 'Nomad',     Icon: Wifi,        desc: 'Remote work-friendly' },
+  { id: 'popular',   label: 'Trending',  Icon: TrendingUp,  desc: 'Most visited' },
 ]
 
 const LAYER_LEGENDS = {
   budget:    [['#10b981', '<$55/day'], ['#f97316', '$55–$100'], ['#8b5cf6', '>$100']],
   safety:    [['#10b981', 'High Safety'], ['#f59e0b', 'Medium'], ['#ef4444', 'Lower']],
-  food:      [['#f97316', 'Food Destination'], ['#64748b', 'Other']],
-  adventure: [['#14b8a6', 'Adventure Spot'],   ['#64748b', 'Other']],
-  beach:     [['#06b6d4', 'Beach / Island'],    ['#64748b', 'Other']],
-  visa:      [['#10b981', 'Visa Free'], ['#f59e0b', 'On Arrival'], ['#ef4444', 'Visa Required']],
+  food:      [['#f97316', 'Food Hub'], ['#64748b', 'Other']],
+  adventure: [['#14b8a6', 'Adventure Spot'], ['#64748b', 'Other']],
+  beach:     [['#06b6d4', 'Beach / Island'], ['#64748b', 'Other']],
+  nightlife: [['#ec4899', 'Vibrant Nightlife'], ['#a855f7', 'Moderate'], ['#64748b', 'Quiet']],
+  weather:   [['#f59e0b', 'Warm >25°C'], ['#3b82f6', 'Mild 15–25°C'], ['#8b5cf6', 'Cool <15°C']],
+  visa:      [['#10b981', 'Visa Free'], ['#f59e0b', 'On Arrival'], ['#ef4444', 'Required']],
   nomad:     [['#10b981', 'Nomad-Friendly'], ['#f59e0b', 'Decent'], ['#ef4444', 'Not Ideal']],
   popular:   [['#8b5cf6', 'Very Popular'], ['#f97316', 'Popular'], ['#64748b', 'Off-Beat']],
 }
 
-// ─── PREDEFINED TRAVEL ROUTES ─────────────────────────────────────────────────
-// Routes shown as animated Polylines on the map when toggled.
-// To add a new route: add an entry here — no other code changes needed.
+// ─── 6 TRAVEL ROUTES ─────────────────────────────────────────────────────────
 const PREDEFINED_ROUTES = [
-  {
-    id: 'se-asia',
-    label: '🌏 Classic SE Asia',
-    color: '#f97316',
-    countries: ['thailand', 'vietnam', 'bali', 'singapore'],
-    days: 35,
-    avgPerDay: 45,
-    desc: 'The iconic backpacker trail',
-  },
-  {
-    id: 'europe-budget',
-    label: '🇪🇺 Budget Europe',
-    color: '#8b5cf6',
-    countries: ['portugal', 'spain', 'france', 'italy', 'greece'],
-    days: 40,
-    avgPerDay: 70,
-    desc: 'Lisbon to Athens on a budget',
-  },
-  {
-    id: 'south-america',
-    label: '🌎 South America',
-    color: '#10b981',
-    countries: ['colombia', 'peru', 'brazil'],
-    days: 30,
-    avgPerDay: 45,
-    desc: 'Jungle, ruins, and beaches',
-  },
-  {
-    id: 'middle-east',
-    label: '🌍 Middle East Magic',
-    color: '#f59e0b',
-    countries: ['turkey', 'egypt', 'morocco', 'uae'],
-    days: 25,
-    avgPerDay: 55,
-    desc: 'Ancient civilizations & deserts',
-  },
+  { id: 'se-asia',      label: '🌏 Classic SE Asia',     color: '#f97316', countries: ['thailand','vietnam','bali','singapore'],           days: 35, avgPerDay: 45, desc: 'The iconic backpacker trail' },
+  { id: 'europe-budget',label: '🇪🇺 Budget Europe',       color: '#8b5cf6', countries: ['portugal','spain','france','italy','greece'],     days: 40, avgPerDay: 70, desc: 'Lisbon to Athens on a budget' },
+  { id: 'south-america',label: '🌎 South America',        color: '#10b981', countries: ['colombia','peru','brazil'],                       days: 30, avgPerDay: 45, desc: 'Jungle, ruins, and beaches' },
+  { id: 'middle-east',  label: '🌍 Middle East Magic',    color: '#f59e0b', countries: ['turkey','egypt','morocco','uae'],                 days: 25, avgPerDay: 55, desc: 'Ancient civilizations & deserts' },
+  { id: 'himalayan',    label: '🏔️ Himalayan Circuit',    color: '#14b8a6', countries: ['india','nepal','singapore'],                      days: 28, avgPerDay: 35, desc: 'Temples, mountains & spice routes' },
+  { id: 'africa',       label: '🦁 African Adventure',    color: '#ef4444', countries: ['morocco','egypt','southafrica'],                  days: 32, avgPerDay: 60, desc: 'Sahara, pyramids & safari' },
 ]
+
+// ─── ACHIEVEMENT SYSTEM ───────────────────────────────────────────────────────
+const ACHIEVEMENTS = [
+  { count: 1,  icon: '🗺️', label: 'First Steps',   desc: 'Marked your first destination!',   color: '#64748b' },
+  { count: 5,  icon: '🧭', label: 'Explorer',       desc: '5 countries explored!',             color: '#10b981' },
+  { count: 10, icon: '✈️', label: 'Adventurer',     desc: '10 countries — well traveled!',     color: '#f97316' },
+  { count: 15, icon: '🌍', label: 'Globetrotter',   desc: '15 countries! Impressive.',         color: '#8b5cf6' },
+  { count: 20, icon: '👑', label: 'World Traveler', desc: "20 countries! You're a legend.",    color: '#f59e0b' },
+  { count: 26, icon: '🏆', label: 'Legend',         desc: 'All destinations visited!',         color: '#ef4444' },
+]
+function getCurrentAchievement(count) {
+  return [...ACHIEVEMENTS].reverse().find(a => count >= a.count) || null
+}
+function getNextAchievement(count) {
+  return ACHIEVEMENTS.find(a => count < a.count) || null
+}
+
+// ─── AI SEARCH SUGGESTIONS ────────────────────────────────────────────────────
+const SEARCH_SUGGESTIONS = [
+  'cheapest in Asia', 'safe beach destinations', 'digital nomad spots',
+  'visa-free Europe', 'luxury honeymoon', 'winter warm escape',
+  'adventure hiking', 'hidden gems',
+]
+
+// ─── HEADER PARTICLES (precomputed to avoid re-render flicker) ────────────────
+const HEADER_PARTICLES = [
+  { id:0, top:15, left:8,  size:3, delay:0,   dur:3.2 },
+  { id:1, top:45, left:18, size:2, delay:0.5, dur:3.8 },
+  { id:2, top:22, left:33, size:4, delay:1.1, dur:2.9 },
+  { id:3, top:65, left:42, size:2, delay:0.3, dur:4.1 },
+  { id:4, top:30, left:56, size:3, delay:0.8, dur:3.5 },
+  { id:5, top:75, left:66, size:2, delay:1.4, dur:2.7 },
+  { id:6, top:20, left:73, size:4, delay:0.2, dur:3.9 },
+  { id:7, top:55, left:83, size:3, delay:0.9, dur:3.1 },
+  { id:8, top:40, left:91, size:2, delay:1.6, dur:4.0 },
+  { id:9, top:80, left:96, size:3, delay:0.4, dur:2.8 },
+  { id:10,top:10, left:51, size:2, delay:1.2, dur:3.6 },
+  { id:11,top:60, left:27, size:4, delay:0.7, dur:3.3 },
+]
+
+// ─── WEATHER / SEASON HELPERS ─────────────────────────────────────────────────
+const MONTH_NAMES = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
+const SEASON_MONTHS = { spring:[2,3,4], summer:[5,6,7], fall:[8,9,10], autumn:[8,9,10], winter:[11,0,1] }
+
+function isBestMonth(bestSeasons, idx) {
+  return bestSeasons.some(s => {
+    const sl = s.toLowerCase()
+    if (sl.includes(MONTH_NAMES[idx])) return true
+    return Object.entries(SEASON_MONTHS).some(([season, months]) => sl.includes(season) && months.includes(idx))
+  })
+}
 
 // ─── MARKER COLOR PER LAYER ───────────────────────────────────────────────────
 function getMarkerColor(country, layer) {
@@ -171,17 +148,23 @@ function getMarkerColor(country, layer) {
       return d < 55 ? '#10b981' : d < 100 ? '#f97316' : '#8b5cf6'
     }
     case 'safety':
-      return country.safety === 'high' ? '#10b981'
-           : country.safety === 'medium' ? '#f59e0b' : '#ef4444'
+      return country.safety === 'high' ? '#10b981' : country.safety === 'medium' ? '#f59e0b' : '#ef4444'
     case 'food':
-      return country.tags.some(t => ['food', 'cuisine', 'street food', 'culinary'].includes(t))
-           ? '#f97316' : '#64748b'
+      return country.tags.some(t => ['food','cuisine','street food','culinary'].includes(t)) ? '#f97316' : '#64748b'
     case 'adventure':
-      return country.tags.some(t => ['adventure', 'hiking', 'nature', 'wildlife', 'outdoor', 'trekking'].includes(t))
-           ? '#14b8a6' : '#64748b'
+      return country.tags.some(t => ['adventure','hiking','nature','wildlife','outdoor','trekking'].includes(t)) ? '#14b8a6' : '#64748b'
     case 'beach':
-      return country.tags.some(t => ['beach', 'island', 'tropical', 'coast', 'coastal'].includes(t))
-           ? '#06b6d4' : '#64748b'
+      return country.tags.some(t => ['beach','island','tropical','coast','coastal'].includes(t)) ? '#06b6d4' : '#64748b'
+    case 'nightlife':
+      return country.tags.some(t => ['nightlife','party','entertainment','festival'].includes(t))
+        ? '#ec4899'
+        : country.tags.some(t => ['beach','island','city','urban'].includes(t))
+        ? '#a855f7' : '#64748b'
+    case 'weather': {
+      if (!country.weather?.length) return '#64748b'
+      const avg = country.weather.reduce((s, m) => s + m.temp, 0) / country.weather.length
+      return avg > 25 ? '#f59e0b' : avg > 15 ? '#3b82f6' : '#8b5cf6'
+    }
     case 'visa': {
       const v = country.visa
       if (v.cost === 'Free' || v.cost === '$0' || v.type.toLowerCase().includes('free')) return '#10b981'
@@ -189,47 +172,49 @@ function getMarkerColor(country, layer) {
       return '#ef4444'
     }
     case 'nomad': {
-      const speedStr = country.internet.avgSpeed
-      const speed = parseInt(speedStr) || 0
-      const budgetScore = country.budget.backpacker.perDay < 55 ? 3 : country.budget.backpacker.perDay < 90 ? 2 : 1
-      const safetyScore = country.safety === 'high' ? 3 : country.safety === 'medium' ? 2 : 1
-      const wifiScore   = speed > 50 ? 3 : speed > 20 ? 2 : 1
-      const total = budgetScore + safetyScore + wifiScore
-      return total >= 8 ? '#10b981' : total >= 6 ? '#f59e0b' : '#ef4444'
+      const speed = parseInt(country.internet.avgSpeed) || 0
+      const b = country.budget.backpacker.perDay < 55 ? 3 : country.budget.backpacker.perDay < 90 ? 2 : 1
+      const s = country.safety === 'high' ? 3 : country.safety === 'medium' ? 2 : 1
+      const w = speed > 50 ? 3 : speed > 20 ? 2 : 1
+      return b + s + w >= 8 ? '#10b981' : b + s + w >= 6 ? '#f59e0b' : '#ef4444'
     }
     case 'popular':
-      return country.highlights.length >= 4 ? '#8b5cf6'
-           : country.highlights.length >= 3 ? '#f97316' : '#64748b'
+      return country.highlights.length >= 4 ? '#8b5cf6' : country.highlights.length >= 3 ? '#f97316' : '#64748b'
     default:
       return '#6366f1'
   }
 }
 
-// ─── MARKER BUILDER ───────────────────────────────────────────────────────────
-// Builds a Leaflet divIcon. Selected marker is larger and has a CSS pulse ring.
-// Non-highlighted markers (when search is active) are dimmed to slate-500.
-// CSS animations (.map-pin-pulse) are defined in src/index.css.
-function buildIcon(color, isSelected = false, isHighlighted = true) {
-  const s = isSelected ? 40 : 30
-  const dimStyle = !isHighlighted ? 'opacity:0.2;' : ''
-  const glow     = isSelected ? `box-shadow:0 0 0 5px ${color}30,0 0 18px ${color}50,0 3px 10px rgba(0,0,0,0.4);` : 'box-shadow:0 2px 8px rgba(0,0,0,0.3);'
-  const pulseRing = isSelected
+// ─── PREMIUM MARKER BUILDER WITH FLAG EMOJI ───────────────────────────────────
+// Flag emoji inside each marker makes destinations instantly recognizable.
+// Selected marker has double animated ring (pulse + ping) from index.css.
+function buildIcon(color, isSelected = false, isHighlighted = true, flag = '') {
+  const s = isSelected ? 44 : 34
+  const dimStyle = !isHighlighted ? 'opacity:0.18;' : ''
+  const glow = isSelected
+    ? `box-shadow:0 0 0 4px ${color}25,0 0 22px ${color}65,0 3px 14px rgba(0,0,0,0.55);`
+    : 'box-shadow:0 2px 10px rgba(0,0,0,0.4);'
+  const pulse = isSelected
     ? `<div class="map-pin-pulse" style="position:absolute;inset:-10px;border-radius:50%;background:${color};pointer-events:none;"></div>`
     : ''
+  const ping = isSelected
+    ? `<div class="map-pin-ping" style="position:absolute;inset:-5px;border-radius:50%;border:2px solid ${color};pointer-events:none;"></div>`
+    : ''
+  const fontSize = `${Math.round(s * 0.52)}px`
 
   return L.divIcon({
     className: '',
     html: `
-      <div style="position:relative;width:${s + 20}px;height:${s + 20}px;display:flex;align-items:center;justify-content:center;${dimStyle}">
-        ${pulseRing}
+      <div style="position:relative;width:${s+20}px;height:${s+20}px;display:flex;align-items:center;justify-content:center;${dimStyle}">
+        ${pulse}${ping}
         <div style="
           width:${s}px;height:${s}px;border-radius:50%;
-          background:${color};border:2.5px solid white;
+          background:${color};border:2.5px solid rgba(255,255,255,0.92);
           ${glow}
           cursor:pointer;display:flex;align-items:center;justify-content:center;
-          position:relative;z-index:2;transition:transform 0.2s;
+          position:relative;z-index:2;
         ">
-          <div style="width:${Math.round(s * 0.38)}px;height:${Math.round(s * 0.38)}px;border-radius:50%;background:white;opacity:0.9;"></div>
+          <span style="font-size:${fontSize};line-height:1;user-select:none;">${flag}</span>
         </div>
       </div>`,
     iconSize:    [s + 20, s + 20],
@@ -238,16 +223,54 @@ function buildIcon(color, isSelected = false, isHighlighted = true) {
   })
 }
 
-// ─── AI MAP SEARCH ─────────────────────────────────────────────────────────────
+// ─── AI INSIGHT GENERATOR ─────────────────────────────────────────────────────
+function generateAIInsight(country) {
+  const daily = country.budget.backpacker.perDay
+  const speed = parseInt(country.internet.avgSpeed) || 0
+  if (daily < 40 && country.safety === 'high')
+    return `Budget paradise — safe, affordable, and perfect for extended stays. One of the best value destinations globally.`
+  if (daily > 150)
+    return `Premium destination. Expect world-class experiences, cuisine, and infrastructure. Worth every dollar.`
+  if (speed > 50 && daily < 65)
+    return `Digital nomad dream — fast ${country.internet.avgSpeed} internet combined with $${daily}/day living costs. Highly recommended for remote workers.`
+  if (country.tags.some(t => ['beach','island','tropical'].includes(t)) && country.safety === 'high')
+    return `Safe beach paradise with ${country.highlights[0]?.toLowerCase() || 'stunning coastlines'}. Ideal for relaxed, worry-free travel.`
+  if (country.tags.some(t => t.includes('cultur') || t.includes('histor')))
+    return `Deep cultural immersion awaits — ${country.highlights.slice(0,2).join(' and ').toLowerCase()}. Rich history at every turn.`
+  return `${country.highlights[0] || 'Unique experiences'} define ${country.name}. ${daily < 60 ? 'Budget-friendly' : 'Well worth the investment'} with ${country.safety} safety.`
+}
+
+// ─── TRAVEL TIPS GENERATOR ────────────────────────────────────────────────────
+function generateTips(country) {
+  const tips = []
+  if (country.visa.type.toLowerCase().includes('free') || country.visa.cost === 'Free' || country.visa.cost === '$0')
+    tips.push({ icon: '✅', tip: `Visa-free for most nationalities. Duration: ${country.visa.duration}.${country.visa.notes ? ' ' + country.visa.notes.slice(0, 55) + '…' : ''}` })
+  else if (country.visa.type.toLowerCase().includes('arrival'))
+    tips.push({ icon: '🛂', tip: `Visa on arrival. Cost: ${country.visa.cost}. Duration: ${country.visa.duration}.` })
+  else
+    tips.push({ icon: '📋', tip: `Visa required. Cost: ${country.visa.cost}. Apply well in advance. Duration: ${country.visa.duration}.` })
+
+  if (country.safety === 'high')
+    tips.push({ icon: '🛡️', tip: 'Generally safe for solo travelers. Low crime and reliable infrastructure.' })
+  else if (country.safety === 'medium')
+    tips.push({ icon: '⚠️', tip: 'Exercise normal caution. Research specific areas before your stay.' })
+  else
+    tips.push({ icon: '🚨', tip: 'Check your government travel advisory before visiting. Extra vigilance recommended.' })
+
+  tips.push({ icon: '💵', tip: `Currency: ${country.currency.code} (${country.currency.symbol}). $1 USD ≈ ${country.currency.rateToUSD} ${country.currency.code}.` })
+  tips.push({ icon: '📱', tip: `SIM: ${country.internet.simCard}. Average speed: ${country.internet.avgSpeed}.` })
+  tips.push({ icon: '🚌', tip: `Transport: ${country.transport.publicTransport || 'Various options'}. Taxi: ${country.transport.taxi || 'Available'}.` })
+  tips.push({ icon: '📅', tip: `Best time to visit: ${country.bestSeasons.join(', ')}. Plan around local festivals.` })
+  return tips
+}
+
+// ─── AI MAP SEARCH ────────────────────────────────────────────────────────────
 // Intent-detection without an API key. Returns matching country IDs.
-// Future upgrade: replace with vector embeddings (OpenAI text-embedding-3-small
-// → Pinecone) — return signature stays identical, no caller changes needed.
 function searchCountries(query) {
   const text = query.toLowerCase().trim()
   if (!text) return countries.map(c => c.id)
 
   return countries.filter(c => {
-    // Direct name / capital / continent match
     if (c.name.toLowerCase().includes(text)) return true
     if (c.capital.toLowerCase().includes(text)) return true
     if (c.continent.toLowerCase().includes(text)) return true
@@ -258,27 +281,30 @@ function searchCountries(query) {
     if (/luxury|premium|high.?end|expensive/.test(text) && c.budget.luxury.perDay > 200) return true
     if (/mid.?range|standard|moderate/.test(text) && c.budget.backpacker.perDay >= 55 && c.budget.backpacker.perDay < 100) return true
 
-    // Safety intent
+    // Safety
     if (/safe|safest/.test(text) && c.safety === 'high') return true
 
     // Tag intents
-    if (/beach|island|tropical|coast/.test(text) && c.tags.some(t => ['beach', 'island', 'tropical', 'coast', 'coastal'].includes(t))) return true
-    if (/adventure|hik|nature|wildlife|outdoor/.test(text) && c.tags.some(t => ['adventure', 'hiking', 'nature', 'wildlife', 'outdoor'].includes(t))) return true
-    if (/food|cuisine|culinary|gastronomy|eat/.test(text) && c.tags.some(t => ['food', 'cuisine', 'street food', 'culinary'].includes(t))) return true
+    if (/beach|island|tropical|coast/.test(text) && c.tags.some(t => ['beach','island','tropical','coast','coastal'].includes(t))) return true
+    if (/adventure|hik|nature|wildlife|outdoor/.test(text) && c.tags.some(t => ['adventure','hiking','nature','wildlife','outdoor'].includes(t))) return true
+    if (/food|cuisine|culinary|gastronomy|eat/.test(text) && c.tags.some(t => ['food','cuisine','street food','culinary'].includes(t))) return true
     if (/romantic|couple|honeymoon/.test(text) && c.tags.includes('romantic')) return true
-    if (/culture|history|art|heritage|museum/.test(text) && c.tags.some(t => ['culture', 'history', 'art', 'heritage', 'cultural'].includes(t))) return true
-    if (/warm|hot|sunny|tropical/.test(text) && c.tags.some(t => ['tropical', 'beach', 'island'].includes(t))) return true
+    if (/culture|history|art|heritage|museum/.test(text) && c.tags.some(t => ['culture','history','art','heritage','cultural'].includes(t))) return true
+    if (/warm|hot|sunny|tropical/.test(text) && c.tags.some(t => ['tropical','beach','island'].includes(t))) return true
+    if (/nightlife|party|club|bar|entertainment/.test(text) && c.tags.some(t => ['nightlife','party','entertainment','beach','island'].includes(t))) return true
+    if (/cold|snow|ski|winter.?sport/.test(text) && c.tags.some(t => ['snow','skiing','alpine','mountain'].includes(t))) return true
+    if (/hidden|gem|off.?beaten|underrated/.test(text) && c.highlights.length < 4) return true
 
     // Visa intent
     if (/visa.?free|no visa/.test(text) && (c.visa.cost === 'Free' || c.visa.cost === '$0' || c.visa.type.toLowerCase().includes('free'))) return true
 
-    // Nomad intent — needs good WiFi + affordable + safe
+    // Nomad
     if (/nomad|remote|work|digital/.test(text)) {
       const speed = parseInt(c.internet.avgSpeed) || 0
       if (speed > 20 && c.budget.backpacker.perDay < 80 && c.safety !== 'low') return true
     }
 
-    // Continent shortcuts
+    // Continent
     if (text.includes('europe') && c.continent === 'Europe') return true
     if (text.includes('asia') && c.continent === 'Asia') return true
     if (text.includes('africa') && c.continent === 'Africa') return true
@@ -290,8 +316,6 @@ function searchCountries(query) {
 }
 
 // ─── MAP CONTROLLER ───────────────────────────────────────────────────────────
-// Must render inside MapContainer to access useMap().
-// Drives programmatic flyTo (Discover Mode) and fitBounds (search results).
 function MapController({ flyToId, fitIds }) {
   const map = useMap()
   const prevFlyRef = useRef(null)
@@ -299,39 +323,36 @@ function MapController({ flyToId, fitIds }) {
   useEffect(() => {
     if (flyToId && flyToId !== prevFlyRef.current && COORDS[flyToId]) {
       prevFlyRef.current = flyToId
-      map.flyTo(COORDS[flyToId], 5, { duration: 1.5 })
+      map.flyTo(COORDS[flyToId], 5, { duration: 1.8 })
     }
   }, [flyToId, map])
 
   useEffect(() => {
     if (!fitIds) return
-    if (fitIds.length === 0) {
-      map.flyTo([20, 10], 2, { duration: 1 })
-      return
-    }
+    if (fitIds.length === 0) { map.flyTo([20, 10], 2, { duration: 1 }); return }
     const pts = fitIds.map(id => COORDS[id]).filter(Boolean)
-    if (pts.length > 1) {
-      map.fitBounds(L.latLngBounds(pts), { padding: [50, 50], maxZoom: 6, duration: 1 })
-    } else if (pts.length === 1) {
-      map.flyTo(pts[0], 5, { duration: 1 })
-    }
-  // fitIds as dependency — stringify to detect content changes, not reference changes
+    if (pts.length > 1) map.fitBounds(L.latLngBounds(pts), { padding: [50, 50], maxZoom: 6, duration: 1.2 })
+    else if (pts.length === 1) map.flyTo(pts[0], 5, { duration: 1.2 })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitIds?.join(','), map])
 
   return null
 }
 
-// ─── FILTER CONSTANTS ─────────────────────────────────────────────────────────
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const BUDGET_FILTERS    = ['All', 'Budget (<$55)', 'Mid-range', 'Expensive (>$100)']
 const CONTINENT_FILTERS = ['All', 'Europe', 'Asia', 'North America', 'South America', 'Africa', 'Oceania']
-const SIDEBAR_TABS      = ['overview', 'budget', 'hotels', 'places']
+const SIDEBAR_TABS      = ['overview', 'budget', 'hotels', 'explore']
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 export default function WorldMap() {
-  const { dark }                              = useTheme()
+  const { dark }                                                  = useTheme()
   const { isFavorite, toggleFavorite, addToCompare, compareList } = useApp()
+
+  // Persistent storage
   const [visitedCountries, setVisitedCountries] = useLocalStorage('map-visited-countries', [])
+  const [bucketList, setBucketList]             = useLocalStorage('map-bucket-list', [])
+  const [lastAchievementSeen, setLastAchievementSeen] = useLocalStorage('map-last-achievement', 0)
 
   // Map controls
   const [activeLayer, setActiveLayer]         = useState('budget')
@@ -341,27 +362,38 @@ export default function WorldMap() {
   const [sidebarTab, setSidebarTab]           = useState('overview')
 
   // AI search
-  const [searchQuery, setSearchQuery]         = useState('')
-  const searchInputRef                        = useRef(null)
+  const [searchQuery, setSearchQuery]       = useState('')
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const searchInputRef                      = useRef(null)
 
-  // Routes overlay
-  const [activeRoute, setActiveRoute]         = useState(null)
-  const [showRoutePanel, setShowRoutePanel]   = useState(false)
+  // Routes
+  const [activeRoute, setActiveRoute]       = useState(null)
+  const [showRoutePanel, setShowRoutePanel] = useState(false)
 
-  // Discover mode
-  const [discoverFlyTo, setDiscoverFlyTo]     = useState(null)
+  // Discover + Budget tier
+  const [discoverFlyTo, setDiscoverFlyTo]   = useState(null)
+  const [budgetTier, setBudgetTier]         = useState('standard')
 
-  // Budget tier for sidebar Budget tab
-  const [budgetTier, setBudgetTier]           = useState('standard')
+  // Achievement toast
+  const [showAchievement, setShowAchievement] = useState(null)
 
-  // Report map context to AI assistant
   usePageContext(
-    () => ({
-      currentPage: 'map',
-      activeFilters: { continent: continentFilter, budget: budgetFilter, layer: activeLayer },
-    }),
+    () => ({ currentPage: 'map', activeFilters: { continent: continentFilter, budget: budgetFilter, layer: activeLayer } }),
     [continentFilter, budgetFilter, activeLayer]
   )
+
+  // Achievement detection — fires whenever visited count changes
+  useEffect(() => {
+    const count = visitedCountries.length
+    const achievement = getCurrentAchievement(count)
+    if (achievement && count > lastAchievementSeen) {
+      setLastAchievementSeen(count)
+      setShowAchievement(achievement)
+      const t = setTimeout(() => setShowAchievement(null), 4500)
+      return () => clearTimeout(t)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visitedCountries.length])
 
   // ── Computed data ────────────────────────────────────────────────────────
   const searchMatches = useMemo(
@@ -369,62 +401,27 @@ export default function WorldMap() {
     [searchQuery]
   )
 
-  const visible = useMemo(() => {
-    return countries.filter(c => {
-      if (!COORDS[c.id]) return false
-      if (continentFilter !== 'All' && c.continent !== continentFilter) return false
-      const perDay = c.budget.backpacker.perDay
-      if (budgetFilter === 'Budget (<$55)'     && perDay >= 55)             return false
-      if (budgetFilter === 'Mid-range'          && (perDay < 55 || perDay >= 100)) return false
-      if (budgetFilter === 'Expensive (>$100)' && perDay < 100)             return false
-      return true
-    })
-  }, [budgetFilter, continentFilter])
+  const visible = useMemo(() => countries.filter(c => {
+    if (!COORDS[c.id]) return false
+    if (continentFilter !== 'All' && c.continent !== continentFilter) return false
+    const d = c.budget.backpacker.perDay
+    if (budgetFilter === 'Budget (<$55)'      && d >= 55)           return false
+    if (budgetFilter === 'Mid-range'           && (d < 55 || d >= 100)) return false
+    if (budgetFilter === 'Expensive (>$100)'  && d < 100)           return false
+    return true
+  }), [budgetFilter, continentFilter])
 
-  // Stats computed from currently filtered + matched countries
   const stats = useMemo(() => {
     const pool = searchMatches ? visible.filter(c => searchMatches.includes(c.id)) : visible
     if (!pool.length) return null
-    const avgBudget    = Math.round(pool.reduce((s, c) => s + c.budget.backpacker.perDay, 0) / pool.length)
-    const safeCount    = pool.filter(c => c.safety === 'high').length
-    const visitedCount = pool.filter(c => visitedCountries.includes(c.id)).length
-    return { count: pool.length, avgBudget, safeCount, visitedCount }
+    return {
+      count:        pool.length,
+      avgBudget:    Math.round(pool.reduce((s, c) => s + c.budget.backpacker.perDay, 0) / pool.length),
+      safeCount:    pool.filter(c => c.safety === 'high').length,
+      visitedCount: pool.filter(c => visitedCountries.includes(c.id)).length,
+    }
   }, [visible, searchMatches, visitedCountries])
 
-  // ── Handlers ─────────────────────────────────────────────────────────────
-  const handleCountryClick = useCallback(c => {
-    setSelected(c)
-    setSidebarTab('overview')
-  }, [])
-
-  const toggleVisited = useCallback(countryId => {
-    setVisitedCountries(prev =>
-      prev.includes(countryId)
-        ? prev.filter(id => id !== countryId)
-        : [...prev, countryId]
-    )
-  }, [setVisitedCountries])
-
-  // Discover Mode — picks a random unvisited country and flies to it
-  const handleSurpriseMe = useCallback(() => {
-    const unvisited = visible.filter(c => !visitedCountries.includes(c.id))
-    const pool = unvisited.length > 0 ? unvisited : visible
-    const pick = pool[Math.floor(Math.random() * pool.length)]
-    if (pick) {
-      setSelected(pick)
-      setSidebarTab('overview')
-      setDiscoverFlyTo(pick.id)
-    }
-  }, [visible, visitedCountries])
-
-  // CartoDB tiles: no API key, polished dark/light variants
-  const tileUrl = dark
-    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-    : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
-
-  const activeLegend = LAYER_LEGENDS[activeLayer] || []
-
-  // Route polyline coordinates for the active route
   const routePolylines = useMemo(() => {
     if (!activeRoute) return []
     const route = PREDEFINED_ROUTES.find(r => r.id === activeRoute)
@@ -437,56 +434,128 @@ export default function WorldMap() {
     })).filter(seg => seg.from && seg.to)
   }, [activeRoute])
 
+  // ── Handlers ─────────────────────────────────────────────────────────────
+  const handleCountryClick = useCallback(c => { setSelected(c); setSidebarTab('overview') }, [])
+
+  const toggleVisited = useCallback(id => {
+    setVisitedCountries(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }, [setVisitedCountries])
+
+  const toggleBucketList = useCallback(id => {
+    setBucketList(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }, [setBucketList])
+
+  const handleSurpriseMe = useCallback(() => {
+    const pool = visible.filter(c => !visitedCountries.includes(c.id))
+    const pick = (pool.length ? pool : visible)[Math.floor(Math.random() * (pool.length || visible.length))]
+    if (pick) { setSelected(pick); setSidebarTab('overview'); setDiscoverFlyTo(pick.id) }
+  }, [visible, visitedCountries])
+
+  const handleSearch = useCallback(q => { setSearchQuery(q); setShowSuggestions(false) }, [])
+
+  // CartoDB tiles — no API key required
+  const tileUrl = dark
+    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+    : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
+
+  const activeLegend        = LAYER_LEGENDS[activeLayer] || []
+  const currentAchievement  = getCurrentAchievement(visitedCountries.length)
+  const nextAchievement     = getNextAchievement(visitedCountries.length)
+
   return (
     <div className="min-h-screen bg-slate-950 pt-16 lg:pt-20 flex flex-col">
 
-      {/* ── Page header with AI search ───────────────────────────────────── */}
-      <div className="bg-gradient-to-r from-slate-900 via-brand-900 to-slate-900 border-b border-slate-800 py-6">
-        <div className="section-container">
-          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mb-4">
-            <div className="flex items-center gap-2 mb-1">
-              <Zap size={14} className="text-brand-400" />
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Travel Intelligence Map</span>
+      {/* ── Cinematic header with particles ─────────────────────────────── */}
+      <div className="relative overflow-hidden bg-gradient-to-r from-slate-900 via-brand-950 to-slate-900 border-b border-slate-800 py-6">
+        {/* Animated floating particles */}
+        {HEADER_PARTICLES.map(p => (
+          <motion.div
+            key={p.id}
+            className="absolute rounded-full bg-brand-400/20 pointer-events-none"
+            style={{ width: p.size, height: p.size, top: `${p.top}%`, left: `${p.left}%` }}
+            animate={{ y: [0, -14, 0], opacity: [0.12, 0.45, 0.12] }}
+            transition={{ duration: p.dur, delay: p.delay, repeat: Infinity, ease: 'easeInOut' }}
+          />
+        ))}
+
+        <div className="section-container relative z-10">
+          <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className="mb-4">
+            <div className="flex items-center gap-2 mb-1.5">
+              <div className="w-5 h-5 rounded-md bg-gradient-to-br from-brand-500 to-purple-600 flex items-center justify-center">
+                <Zap size={11} className="text-white" />
+              </div>
+              <span className="text-[10px] font-bold text-brand-400 uppercase tracking-widest">AI Travel Intelligence</span>
             </div>
-            <h1 className="font-display text-2xl sm:text-3xl font-bold text-white">
-              World Travel Map
+            <h1 className="font-display text-2xl sm:text-3xl font-bold">
+              <span className="text-white">World </span>
+              <span className="gradient-text">Travel Map</span>
             </h1>
+            <p className="text-xs text-slate-500 mt-1">
+              {countries.length} destinations · 10 intelligence layers · real-time AI search
+            </p>
           </motion.div>
 
           {/* AI Search bar */}
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="max-w-2xl">
-            <div className="relative flex items-center gap-2 bg-white/8 backdrop-blur-sm border border-white/10 rounded-2xl px-4 py-3 focus-within:border-brand-500/50 transition-colors">
-              <Search size={16} className="text-slate-400 flex-shrink-0" />
+            <div
+              className="relative flex items-center gap-2 bg-white/6 backdrop-blur-sm border border-white/10 rounded-2xl px-4 py-3 focus-within:border-brand-500/40 focus-within:bg-white/9 transition-all duration-200"
+            >
+              <Search size={15} className="text-slate-400 flex-shrink-0" />
               <input
                 ref={searchInputRef}
                 type="text"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                placeholder='Try: "cheapest in Asia" · "safe beach destinations" · "digital nomad"'
-                className="flex-1 bg-transparent text-white placeholder:text-slate-500 text-sm outline-none"
+                onFocus={() => setShowSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                placeholder='Try: "cheapest in Asia" · "safe beach" · "digital nomad" · "hidden gems"'
+                className="flex-1 bg-transparent text-white placeholder:text-slate-600 text-sm outline-none"
               />
-              {searchQuery && (
-                <button onClick={() => setSearchQuery('')} className="text-slate-500 hover:text-white transition-colors flex-shrink-0">
-                  <X size={15} />
-                </button>
-              )}
+              {searchQuery
+                ? <button onClick={() => setSearchQuery('')} className="text-slate-500 hover:text-white transition-colors flex-shrink-0"><X size={14} /></button>
+                : <span className="text-[9px] font-bold text-brand-500/70 uppercase tracking-wider hidden sm:block">AI</span>
+              }
             </div>
+
+            {/* Search result count */}
             {searchQuery && stats && (
               <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-xs text-brand-400 mt-1.5 ml-1">
-                {stats.count} destination{stats.count !== 1 ? 's' : ''} match — map updated
+                {stats.count} destination{stats.count !== 1 ? 's' : ''} matched — map updated
               </motion.p>
             )}
+
+            {/* AI suggestion chips */}
+            <AnimatePresence>
+              {showSuggestions && !searchQuery && (
+                <motion.div
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  className="mt-2 flex flex-wrap gap-1.5"
+                >
+                  {SEARCH_SUGGESTIONS.map(s => (
+                    <button
+                      key={s}
+                      onMouseDown={() => handleSearch(s)}
+                      className="text-[11px] px-3 py-1 rounded-full bg-white/6 hover:bg-white/12 border border-white/10 hover:border-brand-500/40 text-slate-300 hover:text-white transition-all duration-150"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </motion.div>
         </div>
       </div>
 
-      {/* ── Layer control bar ─────────────────────────────────────────────── */}
+      {/* ── 10-layer control bar ──────────────────────────────────────────── */}
       <div className="bg-slate-900 border-b border-slate-800">
         <div className="section-container py-2.5">
           <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide">
-            <div className="flex items-center gap-1 mr-1">
-              <Layers size={13} className="text-slate-500" />
-              <span className="text-xs font-semibold text-slate-500 whitespace-nowrap">Layer</span>
+            <div className="flex items-center gap-1 mr-1 flex-shrink-0">
+              <Layers size={12} className="text-slate-600" />
+              <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Layer</span>
             </div>
             {LAYERS.map(({ id, label, Icon }) => (
               <button
@@ -498,7 +567,7 @@ export default function WorldMap() {
                     : 'text-slate-400 hover:text-white hover:bg-slate-800'
                 }`}
               >
-                <Icon size={12} />
+                <Icon size={11} />
                 {label}
               </button>
             ))}
@@ -509,18 +578,15 @@ export default function WorldMap() {
       {/* ── Filter + legend bar ───────────────────────────────────────────── */}
       <div className="bg-slate-900/80 border-b border-slate-800">
         <div className="section-container py-2 flex flex-wrap items-center gap-3">
-          {/* Budget filter */}
-          <div className="flex items-center gap-2">
-            <Filter size={12} className="text-slate-500" />
+          <div className="flex items-center gap-1.5">
+            <Filter size={11} className="text-slate-600" />
             <div className="flex gap-1 flex-wrap">
               {BUDGET_FILTERS.map(f => (
                 <button
                   key={f}
                   onClick={() => setBudgetFilter(f)}
                   className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all duration-200 ${
-                    budgetFilter === f
-                      ? 'bg-brand-600 text-white'
-                      : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
+                    budgetFilter === f ? 'bg-brand-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
                   }`}
                 >
                   {f}
@@ -529,22 +595,18 @@ export default function WorldMap() {
             </div>
           </div>
 
-          {/* Region filter */}
-          <div className="flex items-center gap-1.5">
-            <select
-              value={continentFilter}
-              onChange={e => setContinentFilter(e.target.value)}
-              className="text-xs font-medium rounded-lg px-2 py-1 bg-slate-800 border border-slate-700
-                text-slate-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
-            >
-              {CONTINENT_FILTERS.map(c => <option key={c}>{c}</option>)}
-            </select>
-          </div>
+          <select
+            value={continentFilter}
+            onChange={e => setContinentFilter(e.target.value)}
+            className="text-xs font-medium rounded-lg px-2 py-1 bg-slate-800 border border-slate-700 text-slate-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+          >
+            {CONTINENT_FILTERS.map(c => <option key={c}>{c}</option>)}
+          </select>
 
-          {/* Legend */}
+          {/* Layer legend */}
           <div className="ml-auto flex items-center gap-2.5 flex-wrap">
             {activeLegend.map(([col, label]) => (
-              <span key={label} className="flex items-center gap-1 text-xs text-slate-400 whitespace-nowrap">
+              <span key={label} className="flex items-center gap-1 text-[11px] text-slate-400 whitespace-nowrap">
                 <span className="w-2.5 h-2.5 rounded-full inline-block flex-shrink-0" style={{ background: col }} />
                 {label}
               </span>
@@ -567,36 +629,41 @@ export default function WorldMap() {
               <span className="text-xs text-slate-400">
                 <span className="font-bold text-emerald-400">{stats.safeCount}</span> high-safety
               </span>
-              <span className="text-xs text-slate-400">
-                <span className="font-bold text-brand-400">{stats.visitedCount}</span> visited
-                <span className="text-slate-600"> / {stats.count}</span>
-              </span>
+
+              {/* Achievement progress */}
+              <div className="flex items-center gap-1.5">
+                {currentAchievement && <span className="text-base leading-none">{currentAchievement.icon}</span>}
+                <span className="text-xs text-slate-400">
+                  <span className="font-bold text-brand-400">{visitedCountries.length}</span> visited
+                </span>
+                {nextAchievement && (
+                  <span className="text-[10px] text-slate-600">
+                    · {nextAchievement.count - visitedCountries.length} to {nextAchievement.label}
+                  </span>
+                )}
+              </div>
+
+              {bucketList.length > 0 && (
+                <span className="text-xs text-slate-400 flex items-center gap-1">
+                  <Bookmark size={11} className="text-amber-400 fill-amber-400" />
+                  <span className="font-bold text-amber-400">{bucketList.length}</span> bucket list
+                </span>
+              )}
             </>
           )}
 
           <div className="ml-auto flex items-center gap-2">
-            {/* Discover / Surprise Me */}
             <button
               onClick={handleSurpriseMe}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold
-                bg-gradient-to-r from-brand-600 to-purple-600 text-white
-                hover:opacity-90 transition-all duration-200"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-gradient-to-r from-brand-600 to-purple-600 text-white hover:opacity-90 transition-all duration-200"
             >
-              <Shuffle size={12} />
-              Surprise Me
+              <Shuffle size={12} /> Surprise Me
             </button>
-
-            {/* Routes toggle */}
             <button
               onClick={() => setShowRoutePanel(p => !p)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 ${
-                showRoutePanel
-                  ? 'bg-brand-600 text-white'
-                  : 'bg-slate-800 text-slate-400 hover:text-white'
-              }`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 ${showRoutePanel ? 'bg-brand-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
             >
-              <Plane size={12} />
-              Routes
+              <Plane size={12} /> Routes
               <ChevronDown size={11} className={`transition-transform ${showRoutePanel ? 'rotate-180' : ''}`} />
             </button>
           </div>
@@ -623,13 +690,11 @@ export default function WorldMap() {
                     key={route.id}
                     onClick={() => setActiveRoute(r => r === route.id ? null : route.id)}
                     className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border ${
-                      activeRoute === route.id
-                        ? 'text-white border-transparent'
-                        : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                      activeRoute === route.id ? 'text-white border-transparent' : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
                     }`}
                     style={activeRoute === route.id ? { background: route.color + '33', borderColor: route.color } : {}}
                   >
-                    <span className="w-2 h-2 rounded-full" style={{ background: route.color }} />
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: route.color }} />
                     {route.label}
                     <span className="text-slate-400 font-normal hidden sm:inline">· {route.days}d · ${route.avgPerDay}/day</span>
                   </button>
@@ -643,7 +708,7 @@ export default function WorldMap() {
       {/* ── Map + Sidebar layout ─────────────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden" style={{ height: 'calc(100vh - 260px)', minHeight: 440 }}>
 
-        {/* Leaflet map — re-mounts on dark change so tile URL updates */}
+        {/* Leaflet map — key on dark forces tile URL refresh */}
         <div className="flex-1 relative">
           <MapContainer
             center={[20, 10]}
@@ -656,71 +721,57 @@ export default function WorldMap() {
               url={tileUrl}
               attribution='&copy; <a href="https://carto.com">CartoDB</a> &copy; <a href="https://openstreetmap.org">OSM</a>'
             />
-
-            {/* Programmatic map control — must be inside MapContainer */}
             <MapController
               flyToId={discoverFlyTo}
               fitIds={searchQuery ? (searchMatches || []) : null}
             />
 
-            {/* Travel route Polylines */}
+            {/* Travel route polylines */}
             {routePolylines.map(seg => (
               <Polyline
                 key={seg.key}
                 positions={[seg.from, seg.to]}
                 color={seg.color}
-                weight={2.5}
+                weight={3}
                 dashArray="10 7"
-                opacity={0.85}
+                opacity={0.9}
               />
             ))}
 
-            {/* Country markers */}
+            {/* Country markers with flag emoji */}
             {visible.map(c => {
-              const coords = COORDS[c.id]
               const isSelected    = selected?.id === c.id
               const isHighlighted = !searchMatches || searchMatches.includes(c.id)
               const color         = getMarkerColor(c, activeLayer)
-
               return (
                 <Marker
                   key={c.id}
-                  position={coords}
-                  icon={buildIcon(isHighlighted ? color : '#475569', isSelected, isHighlighted)}
+                  position={COORDS[c.id]}
+                  icon={buildIcon(isHighlighted ? color : '#475569', isSelected, isHighlighted, c.flag)}
                   eventHandlers={{ click: () => handleCountryClick(c) }}
                 >
-                  {/* Minimal popup — sidebar has the full data */}
                   <Popup>
-                    <div style={{ fontFamily: 'Inter, sans-serif', minWidth: 190 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                        <span style={{ fontSize: 20 }}>{c.flag}</span>
+                    <div style={{ fontFamily:'Inter,sans-serif', minWidth: 200 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap: 8, marginBottom: 8 }}>
+                        <span style={{ fontSize: 22 }}>{c.flag}</span>
                         <div>
                           <strong style={{ fontSize: 14 }}>{c.name}</strong>
-                          <div style={{ fontSize: 11, color: '#94a3b8' }}>{c.continent}</div>
+                          <div style={{ fontSize: 11, color:'#94a3b8' }}>{c.continent} · {c.capital}</div>
                         </div>
                       </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5, marginBottom: 10 }}>
-                        {[
-                          ['Backpacker', c.budget.backpacker.perDay, '#10b981'],
-                          ['Standard',   c.budget.standard.perDay,   '#f97316'],
-                          ['Luxury',     c.budget.luxury.perDay,     '#8b5cf6'],
-                        ].map(([label, val, col]) => (
-                          <div key={label} style={{ textAlign: 'center', background: '#f8fafc', borderRadius: 8, padding: '5px 3px' }}>
+                      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap: 5, marginBottom: 10 }}>
+                        {[['🎒', c.budget.backpacker.perDay,'#10b981'],['✈️',c.budget.standard.perDay,'#f97316'],['👑',c.budget.luxury.perDay,'#8b5cf6']].map(([lbl,val,col]) => (
+                          <div key={lbl} style={{ textAlign:'center', background:'#f8fafc', borderRadius: 8, padding:'5px 2px' }}>
                             <div style={{ fontSize: 12, fontWeight: 700, color: col }}>${val}</div>
-                            <div style={{ fontSize: 9, color: '#94a3b8' }}>{label}</div>
+                            <div style={{ fontSize: 9, color:'#94a3b8' }}>{lbl}/day</div>
                           </div>
                         ))}
                       </div>
                       <button
                         onClick={() => handleCountryClick(c)}
-                        style={{
-                          display: 'block', width: '100%', textAlign: 'center', padding: '6px 0',
-                          background: 'linear-gradient(to right,#7c3aed,#8b5cf6)',
-                          color: 'white', borderRadius: 8, fontSize: 11, fontWeight: 600,
-                          border: 'none', cursor: 'pointer',
-                        }}
+                        style={{ display:'block', width:'100%', textAlign:'center', padding:'6px 0', background:'linear-gradient(to right,#7c3aed,#8b5cf6)', color:'white', borderRadius: 8, fontSize: 11, fontWeight: 600, border:'none', cursor:'pointer' }}
                       >
-                        Full details →
+                        View full details →
                       </button>
                     </div>
                   </Popup>
@@ -729,22 +780,47 @@ export default function WorldMap() {
             })}
           </MapContainer>
 
-          {/* Visited progress — floating bottom-left */}
+          {/* Visited progress bar — floating bottom-left */}
           {visitedCountries.length > 0 && (
-            <div className="absolute bottom-3 left-3 z-[999] bg-slate-900/90 backdrop-blur-sm border border-slate-700 rounded-xl px-3 py-2 flex items-center gap-2">
-              <Eye size={13} className="text-brand-400" />
+            <div className="absolute bottom-3 left-3 z-[999] bg-slate-900/92 backdrop-blur-sm border border-slate-700 rounded-xl px-3 py-2 flex items-center gap-2">
+              <Eye size={12} className="text-brand-400" />
               <span className="text-xs text-white font-semibold">
-                {visitedCountries.length} <span className="text-slate-400 font-normal">visited</span>
+                {visitedCountries.length}
+                <span className="text-slate-400 font-normal"> visited</span>
               </span>
               <div className="w-20 h-1.5 bg-slate-700 rounded-full overflow-hidden ml-1">
                 <div
-                  className="h-1.5 bg-gradient-to-r from-brand-500 to-purple-500 rounded-full transition-all duration-500"
+                  className="h-1.5 bg-gradient-to-r from-brand-500 to-purple-500 rounded-full transition-all duration-700"
                   style={{ width: `${(visitedCountries.length / countries.length) * 100}%` }}
                 />
               </div>
-              <span className="text-xs text-slate-500">/ {countries.length}</span>
+              <span className="text-xs text-slate-600">/ {countries.length}</span>
+              {currentAchievement && <span className="text-sm leading-none ml-0.5">{currentAchievement.icon}</span>}
             </div>
           )}
+
+          {/* Achievement toast — floating bottom-right */}
+          <AnimatePresence>
+            {showAchievement && (
+              <motion.div
+                initial={{ opacity: 0, y: 20, scale: 0.88 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 16, scale: 0.92 }}
+                transition={{ type: 'spring', stiffness: 280, damping: 24 }}
+                className="absolute bottom-14 right-3 z-[1000] bg-slate-900/96 backdrop-blur-xl border border-slate-700 rounded-2xl p-4 shadow-2xl max-w-[230px]"
+              >
+                <div className="flex items-start gap-3">
+                  <span className="text-3xl leading-none flex-shrink-0">{showAchievement.icon}</span>
+                  <div>
+                    <div className="text-[9px] font-bold text-brand-400 uppercase tracking-widest mb-0.5">Achievement Unlocked!</div>
+                    <div className="font-bold text-white text-sm leading-tight">{showAchievement.label}</div>
+                    <div className="text-[11px] text-slate-400 mt-1 leading-relaxed">{showAchievement.desc}</div>
+                  </div>
+                </div>
+                <div className="mt-3 h-1 rounded-full" style={{ background: showAchievement.color }} />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* ── Country detail sidebar ─────────────────────────────────────── */}
@@ -752,55 +828,61 @@ export default function WorldMap() {
           {selected && (
             <motion.aside
               key={selected.id}
-              initial={{ x: 300, opacity: 0 }}
+              initial={{ x: 320, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
-              exit={{ x: 300, opacity: 0 }}
-              transition={{ type: 'spring', stiffness: 280, damping: 28 }}
-              className="w-72 bg-slate-900 border-l border-slate-700 overflow-y-auto flex-shrink-0"
+              exit={{ x: 320, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 290, damping: 28 }}
+              className="w-80 bg-slate-900 border-l border-slate-700 overflow-y-auto flex-shrink-0"
             >
               {/* Hero image */}
-              <div className="relative h-40 overflow-hidden flex-shrink-0">
+              <div className="relative h-44 overflow-hidden flex-shrink-0">
                 <img
                   src={selected.image}
                   alt={selected.name}
                   className="w-full h-full object-cover"
-                  onError={e => { e.target.onerror = null; e.target.src = 'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=600&h=300&auto=format&fit=crop&q=80' }}
+                  onError={e => { e.target.onerror = null; e.target.src = 'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=700&h=400&auto=format&fit=crop&q=80' }}
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-black/30 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-black/25 to-transparent" />
 
-                {/* Close */}
                 <button
                   onClick={() => setSelected(null)}
-                  className="absolute top-2.5 right-2.5 w-7 h-7 rounded-full bg-black/50 text-white text-sm flex items-center justify-center hover:bg-black/70 transition-colors"
+                  className="absolute top-2.5 right-2.5 w-7 h-7 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
                 >
                   <X size={14} />
                 </button>
 
-                {/* Country label */}
-                <div className="absolute bottom-2.5 left-3">
+                <div className="absolute bottom-3 left-3">
                   <div className="flex items-center gap-2">
-                    <span className="text-2xl">{selected.flag}</span>
+                    <span className="text-3xl leading-none">{selected.flag}</span>
                     <div>
                       <div className="font-bold text-white text-base leading-tight">{selected.name}</div>
-                      <div className="text-xs text-white/60">{selected.continent}</div>
+                      <div className="text-xs text-white/55">{selected.continent} · {selected.capital}</div>
                     </div>
                   </div>
                 </div>
 
-                {/* Favorite + Visited */}
+                {/* Action buttons — favorite, visited, bucket list */}
                 <div className="absolute top-2.5 left-2.5 flex gap-1.5">
                   <button
                     onClick={() => toggleFavorite(selected.id)}
+                    title="Favorite"
                     className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${isFavorite(selected.id) ? 'bg-rose-500' : 'bg-black/50 hover:bg-black/70'}`}
                   >
                     <Heart size={13} className={isFavorite(selected.id) ? 'text-white fill-white' : 'text-white'} />
                   </button>
                   <button
                     onClick={() => toggleVisited(selected.id)}
+                    title={visitedCountries.includes(selected.id) ? 'Unmark visited' : 'Mark as visited'}
                     className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${visitedCountries.includes(selected.id) ? 'bg-emerald-500' : 'bg-black/50 hover:bg-black/70'}`}
-                    title={visitedCountries.includes(selected.id) ? 'Mark as unvisited' : 'Mark as visited'}
                   >
                     <Check size={13} className="text-white" />
+                  </button>
+                  <button
+                    onClick={() => toggleBucketList(selected.id)}
+                    title={bucketList.includes(selected.id) ? 'Remove from bucket list' : 'Add to bucket list'}
+                    className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${bucketList.includes(selected.id) ? 'bg-amber-500' : 'bg-black/50 hover:bg-black/70'}`}
+                  >
+                    <Bookmark size={13} className={bucketList.includes(selected.id) ? 'text-white fill-white' : 'text-white'} />
                   </button>
                 </div>
               </div>
@@ -811,10 +893,8 @@ export default function WorldMap() {
                   <button
                     key={tab}
                     onClick={() => setSidebarTab(tab)}
-                    className={`flex-1 py-2 text-xs font-semibold capitalize transition-colors ${
-                      sidebarTab === tab
-                        ? 'text-brand-400 border-b-2 border-brand-400'
-                        : 'text-slate-500 hover:text-slate-300'
+                    className={`flex-1 py-2.5 text-xs font-semibold capitalize transition-colors ${
+                      sidebarTab === tab ? 'text-brand-400 border-b-2 border-brand-400' : 'text-slate-500 hover:text-slate-300'
                     }`}
                   >
                     {tab}
@@ -824,26 +904,25 @@ export default function WorldMap() {
 
               {/* Tab content */}
               <div className="p-4">
+
                 {/* ── OVERVIEW ─────────────────────────────────────────── */}
                 {sidebarTab === 'overview' && (
                   <div className="space-y-4">
-                    <p className="text-xs text-slate-400 leading-relaxed line-clamp-3">
-                      {selected.description}
-                    </p>
+                    <p className="text-xs text-slate-400 leading-relaxed line-clamp-3">{selected.description}</p>
 
                     {/* Quick facts grid */}
                     <div className="grid grid-cols-2 gap-2">
                       {[
-                        [DollarSign, selected.currency.code, 'Currency'],
+                        [DollarSign, selected.currency.code,                                          'Currency'],
                         [Shield,     selected.safety.charAt(0).toUpperCase() + selected.safety.slice(1), 'Safety'],
-                        [MapPin,     selected.capital, 'Capital'],
-                        [Globe,      selected.visa.type.split('(')[0].trim(), 'Visa'],
-                        [Wifi,       selected.internet.avgSpeed, 'Internet'],
-                        [Star,       selected.population, 'Population'],
+                        [MapPin,     selected.capital,                                                'Capital'],
+                        [Globe,      selected.visa.type.split('(')[0].trim(),                         'Visa'],
+                        [Wifi,       selected.internet.avgSpeed,                                      'Internet'],
+                        [Star,       selected.population,                                             'Population'],
                       ].map(([Icon, val, lbl]) => (
                         <div key={lbl} className="bg-slate-800 rounded-xl p-2.5">
                           <div className="flex items-center gap-1 text-brand-400 mb-0.5">
-                            <Icon size={10} />
+                            <Icon size={9} />
                             <span className="text-[9px] text-slate-500 uppercase tracking-wide">{lbl}</span>
                           </div>
                           <div className="font-semibold text-white text-xs truncate">{val}</div>
@@ -851,25 +930,60 @@ export default function WorldMap() {
                       ))}
                     </div>
 
-                    {/* Best seasons */}
+                    {/* Monthly climate bars */}
+                    {selected.weather?.length === 12 && (() => {
+                      const temps = selected.weather.map(w => w.temp)
+                      const maxT = Math.max(...temps), minT = Math.min(...temps), rng = maxT - minT || 1
+                      return (
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Monthly Climate</p>
+                          <div className="flex items-end gap-px h-10 mb-1">
+                            {selected.weather.map((w, i) => {
+                              const h = 15 + ((w.temp - minT) / rng) * 85
+                              return (
+                                <div key={w.month} title={`${w.month}: ${w.temp}°C`} className="flex-1 flex flex-col items-center justify-end gap-0.5">
+                                  <div
+                                    className={`w-full rounded-sm transition-all ${isBestMonth(selected.bestSeasons, i) ? 'bg-brand-500' : 'bg-slate-700'}`}
+                                    style={{ height: `${h}%` }}
+                                  />
+                                  <span className="text-[7px] text-slate-600 leading-none">{MONTH_NAMES[i].charAt(0).toUpperCase()}</span>
+                                </div>
+                              )
+                            })}
+                          </div>
+                          <p className="text-[9px] text-slate-600 flex items-center gap-1">
+                            <span className="inline-block w-2 h-2 rounded-sm bg-brand-500" />Best months highlighted
+                          </p>
+                        </div>
+                      )
+                    })()}
+
+                    {/* Best seasons pills */}
                     <div>
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Best Seasons</p>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Best Time to Visit</p>
                       <div className="flex flex-wrap gap-1">
                         {selected.bestSeasons.map(s => (
-                          <span key={s} className="text-xs px-2 py-0.5 rounded-full bg-brand-900/40 text-brand-300 border border-brand-800/50">
-                            {s}
-                          </span>
+                          <span key={s} className="text-xs px-2 py-0.5 rounded-full bg-brand-900/40 text-brand-300 border border-brand-800/50">{s}</span>
                         ))}
                       </div>
                     </div>
 
                     {/* Tags */}
                     <div className="flex flex-wrap gap-1">
-                      {selected.tags.slice(0, 6).map(t => (
-                        <span key={t} className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 capitalize">
-                          {t}
-                        </span>
+                      {selected.tags.slice(0, 7).map(t => (
+                        <span key={t} className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 capitalize">{t}</span>
                       ))}
+                    </div>
+
+                    {/* AI Insight card */}
+                    <div className="bg-gradient-to-br from-brand-900/40 to-purple-900/30 border border-brand-700/30 rounded-xl p-3">
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <div className="w-4 h-4 rounded-md bg-gradient-to-br from-brand-500 to-purple-500 flex items-center justify-center flex-shrink-0">
+                          <Zap size={9} className="text-white" />
+                        </div>
+                        <span className="text-[9px] font-bold text-brand-400 uppercase tracking-widest">AI Insight</span>
+                      </div>
+                      <p className="text-[11px] text-slate-300 leading-relaxed">{generateAIInsight(selected)}</p>
                     </div>
                   </div>
                 )}
@@ -883,9 +997,7 @@ export default function WorldMap() {
                         <button
                           key={t}
                           onClick={() => setBudgetTier(t)}
-                          className={`flex-1 py-1.5 text-xs font-semibold rounded-lg capitalize transition-all ${
-                            budgetTier === t ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
-                          }`}
+                          className={`flex-1 py-1.5 text-xs font-semibold rounded-lg capitalize transition-all ${budgetTier === t ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
                         >
                           {t === 'backpacker' ? '🎒' : t === 'standard' ? '✈️' : '👑'} {t}
                         </button>
@@ -893,43 +1005,70 @@ export default function WorldMap() {
                     </div>
 
                     {/* Per day highlight */}
-                    <div className="text-center py-3 bg-slate-800 rounded-xl">
-                      <div className="text-3xl font-bold text-white">${selected.budget[budgetTier].perDay}</div>
-                      <div className="text-xs text-slate-400 mt-0.5">per day · {budgetTier}</div>
+                    <div className="text-center py-4 bg-slate-800 rounded-xl">
+                      <div className="text-4xl font-bold text-white">${selected.budget[budgetTier].perDay}</div>
+                      <div className="text-xs text-slate-400 mt-1">per day · {budgetTier}</div>
                     </div>
 
-                    {/* Category breakdown bars */}
+                    {/* Recharts donut + legend */}
+                    {(() => {
+                      const t = selected.budget[budgetTier]
+                      const chartData = [
+                        { name: 'Hotel',      value: t.hotel,      color: '#8b5cf6' },
+                        { name: 'Food',       value: t.food,       color: '#f59e0b' },
+                        { name: 'Transport',  value: t.transport,  color: '#10b981' },
+                        { name: 'Activities', value: t.activities, color: '#06b6d4' },
+                      ]
+                      return (
+                        <div className="flex items-center gap-2">
+                          <ResponsiveContainer width={110} height={110}>
+                            <PieChart>
+                              <Pie data={chartData} cx="50%" cy="50%" innerRadius={30} outerRadius={52} dataKey="value" strokeWidth={0}>
+                                {chartData.map(entry => <Cell key={entry.name} fill={entry.color} />)}
+                              </Pie>
+                            </PieChart>
+                          </ResponsiveContainer>
+                          <div className="flex-1 space-y-2">
+                            {chartData.map(d => (
+                              <div key={d.name} className="flex items-center justify-between text-xs">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: d.color }} />
+                                  <span className="text-slate-400">{d.name}</span>
+                                </div>
+                                <span className="font-bold text-white">${d.value}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })()}
+
+                    {/* Category bars */}
                     {(() => {
                       const t = selected.budget[budgetTier]
                       const max = Math.max(t.hotel, t.food, t.transport, t.activities)
-                      const cats = [
-                        { name: 'Hotel',      val: t.hotel,      bar: 'bg-brand-500' },
-                        { name: 'Food',       val: t.food,       bar: 'bg-amber-500' },
-                        { name: 'Transport',  val: t.transport,  bar: 'bg-emerald-500' },
-                        { name: 'Activities', val: t.activities, bar: 'bg-cyan-500' },
-                      ]
                       return (
                         <div className="space-y-2.5">
-                          {cats.map(cat => (
-                            <div key={cat.name} className="flex items-center gap-2">
-                              <span className="text-xs text-slate-400 w-16 flex-shrink-0">{cat.name}</span>
-                              <div className="flex-1 h-2 rounded-full bg-slate-700">
-                                <div
-                                  className={`h-2 rounded-full ${cat.bar} transition-all duration-500`}
-                                  style={{ width: `${Math.round((cat.val / max) * 100)}%` }}
-                                />
+                          {[['Hotel',t.hotel,'bg-brand-500'],['Food',t.food,'bg-amber-500'],['Transport',t.transport,'bg-emerald-500'],['Activities',t.activities,'bg-cyan-500']].map(([name, val, bar]) => (
+                            <div key={name} className="flex items-center gap-2">
+                              <span className="text-xs text-slate-400 w-16 flex-shrink-0">{name}</span>
+                              <div className="flex-1 h-1.5 rounded-full bg-slate-700">
+                                <div className={`h-1.5 rounded-full ${bar} transition-all duration-500`} style={{ width: `${Math.round((val / max) * 100)}%` }} />
                               </div>
-                              <span className="text-xs font-bold text-white w-9 text-right">${cat.val}</span>
+                              <span className="text-xs font-bold text-white w-9 text-right">${val}</span>
                             </div>
                           ))}
                         </div>
                       )
                     })()}
 
-                    {/* Visa cost */}
                     <div className="flex justify-between items-center text-xs py-2 border-t border-slate-800">
                       <span className="text-slate-400">Visa cost</span>
                       <span className="font-semibold text-white">{selected.visa.cost}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs pb-1">
+                      <span className="text-slate-400">Currency</span>
+                      <span className="font-semibold text-white">{selected.currency.code} ({selected.currency.symbol})</span>
                     </div>
                   </div>
                 )}
@@ -939,7 +1078,7 @@ export default function WorldMap() {
                   <div className="space-y-3">
                     {selected.hotels.map(h => (
                       <div key={h.name} className="bg-slate-800 rounded-xl p-3">
-                        <div className="flex items-start justify-between gap-2 mb-1">
+                        <div className="flex items-start justify-between gap-2 mb-1.5">
                           <div>
                             <div className="font-semibold text-white text-xs leading-tight">{h.name}</div>
                             <div className="text-[10px] text-slate-400 mt-0.5">{h.area}</div>
@@ -956,23 +1095,38 @@ export default function WorldMap() {
                             ))}
                           </div>
                           <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full capitalize ${
-                            h.type === 'luxury'   ? 'bg-brand-900/50 text-brand-300' :
-                            h.type === 'standard' ? 'bg-blue-900/50 text-blue-300'  :
-                                                    'bg-emerald-900/50 text-emerald-300'
-                          }`}>
-                            {h.type}
-                          </span>
+                            h.type === 'luxury' ? 'bg-brand-900/50 text-brand-300' : h.type === 'standard' ? 'bg-blue-900/50 text-blue-300' : 'bg-emerald-900/50 text-emerald-300'
+                          }`}>{h.type}</span>
                           <span className="text-[9px] text-amber-400 ml-auto">★ {h.rating}</span>
                         </div>
                       </div>
                     ))}
+
+                    {/* Transport summary */}
+                    <div className="bg-slate-800/60 rounded-xl p-3 mt-2">
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Getting Around</p>
+                      <div className="space-y-1.5 text-xs">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Public transport</span>
+                          <span className="text-slate-300 text-right ml-2 max-w-[130px] truncate">{selected.transport.publicTransport || '—'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Taxi</span>
+                          <span className="text-slate-300 text-right ml-2 max-w-[130px] truncate">{selected.transport.taxi || '—'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Car rental</span>
+                          <span className="text-slate-300 text-right ml-2 max-w-[130px] truncate">{selected.transport.carRental || '—'}</span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
 
-                {/* ── PLACES ───────────────────────────────────────────── */}
-                {sidebarTab === 'places' && (
-                  <div className="space-y-3">
-                    {/* Top attractions */}
+                {/* ── EXPLORE ──────────────────────────────────────────── */}
+                {sidebarTab === 'explore' && (
+                  <div className="space-y-4">
+                    {/* Attractions */}
                     <div>
                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Top Attractions</p>
                       <div className="space-y-2">
@@ -990,26 +1144,40 @@ export default function WorldMap() {
                       </div>
                     </div>
 
-                    {/* Highlights chips */}
+                    {/* Must-try food */}
                     <div>
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Highlights</p>
-                      <div className="flex flex-wrap gap-1">
-                        {selected.highlights.map(h => (
-                          <span key={h} className="text-[10px] px-2 py-0.5 rounded-full bg-brand-900/30 text-brand-300 border border-brand-800/40">
-                            {h}
-                          </span>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Must-Try Food</p>
+                      <div className="space-y-1.5">
+                        {selected.restaurants.slice(0, 3).map(r => (
+                          <div key={r.name} className="flex items-center justify-between text-xs bg-slate-800/50 rounded-lg px-2.5 py-1.5">
+                            <div>
+                              <span className="text-slate-200 font-medium">{r.name}</span>
+                              <span className="text-slate-500 ml-1">· {r.mustTry}</span>
+                            </div>
+                            <span className="text-amber-400 flex-shrink-0 ml-1">{r.priceRange}</span>
+                          </div>
                         ))}
                       </div>
                     </div>
 
-                    {/* Best restaurants */}
+                    {/* Highlights */}
                     <div>
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Must-Try Food</p>
-                      <div className="space-y-1.5">
-                        {selected.restaurants.slice(0, 2).map(r => (
-                          <div key={r.name} className="flex items-center justify-between text-xs">
-                            <span className="text-slate-300">{r.name}</span>
-                            <span className="text-amber-400">{r.priceRange}</span>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Highlights</p>
+                      <div className="flex flex-wrap gap-1">
+                        {selected.highlights.map(h => (
+                          <span key={h} className="text-[10px] px-2 py-0.5 rounded-full bg-brand-900/30 text-brand-300 border border-brand-800/40">{h}</span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* AI-generated travel tips */}
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Travel Tips</p>
+                      <div className="space-y-2">
+                        {generateTips(selected).map((tip, i) => (
+                          <div key={i} className="flex items-start gap-2">
+                            <span className="text-sm leading-none mt-0.5 flex-shrink-0">{tip.icon}</span>
+                            <span className="text-[11px] text-slate-400 leading-relaxed">{tip.tip}</span>
                           </div>
                         ))}
                       </div>
@@ -1020,21 +1188,29 @@ export default function WorldMap() {
 
               {/* ── Footer CTAs ─────────────────────────────────────────── */}
               <div className="p-4 pt-0 space-y-2 border-t border-slate-800 mt-2">
-                <Link
-                  to={`/country/${selected.id}`}
-                  className="btn-primary w-full justify-center py-2.5 text-xs"
-                >
+                <Link to={`/country/${selected.id}`} className="btn-primary w-full justify-center py-2.5 text-xs">
                   Full Country Guide <ChevronRight size={13} />
                 </Link>
-                <button
-                  onClick={() => addToCompare(selected.id)}
-                  disabled={compareList.includes(selected.id) || compareList.length >= 3}
-                  className="w-full py-2 text-xs font-semibold rounded-xl border border-slate-700
-                    text-slate-300 hover:border-brand-500 hover:text-brand-300
-                    disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                >
-                  {compareList.includes(selected.id) ? '✓ In Compare' : '+ Compare'}
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => addToCompare(selected.id)}
+                    disabled={compareList.includes(selected.id) || compareList.length >= 3}
+                    className="flex-1 py-2 text-xs font-semibold rounded-xl border border-slate-700 text-slate-300 hover:border-brand-500 hover:text-brand-300 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  >
+                    {compareList.includes(selected.id) ? '✓ Comparing' : '+ Compare'}
+                  </button>
+                  <button
+                    onClick={() => toggleBucketList(selected.id)}
+                    className={`flex-1 py-2 text-xs font-semibold rounded-xl border transition-all flex items-center justify-center gap-1.5 ${
+                      bucketList.includes(selected.id)
+                        ? 'bg-amber-500/20 border-amber-500/40 text-amber-400'
+                        : 'border-slate-700 text-slate-300 hover:border-amber-500/40 hover:text-amber-400'
+                    }`}
+                  >
+                    <Bookmark size={12} className={bucketList.includes(selected.id) ? 'fill-amber-400' : ''} />
+                    {bucketList.includes(selected.id) ? 'Saved' : 'Bucket List'}
+                  </button>
+                </div>
               </div>
             </motion.aside>
           )}
