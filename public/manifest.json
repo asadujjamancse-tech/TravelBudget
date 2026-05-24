@@ -1,0 +1,20 @@
+{
+  "name": "TravelBudget — Plan Your Perfect Trip",
+  "short_name": "TravelBudget",
+  "description": "Real travel cost data for 26 countries. Plan your budget, compare destinations, and travel smarter.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#7c3aed",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ],
+  "categories": ["travel", "finance", "utilities"],
+  "shortcuts": [
+    { "name": "Explore Countries", "url": "/explore",    "description": "Browse all destinations" },
+    { "name": "Budget Calculator", "url": "/calculator", "description": "Plan your trip budget"  },
+    { "name": "World Map",         "url": "/map",        "description": "Interactive travel map"  },
+    { "name": "My Dashboard",      "url": "/dashboard",  "description": "Track expenses & trips"  }
+  ]
+}

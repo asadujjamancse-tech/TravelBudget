@@ -1,17 +1,19 @@
 import { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Globe, Menu, X, Sun, Moon, Heart, Calculator, Map, Home, BookOpen, Info, Phone, BarChart2, Hotel } from 'lucide-react'
+import { Globe, Menu, X, Sun, Moon, Heart, Calculator, Map, Home, BookOpen, BarChart2, Hotel, LayoutDashboard } from 'lucide-react'
 import { useTheme } from '../../context/ThemeContext'
 import { useApp } from '../../context/AppContext'
 
 const navLinks = [
   { to: '/',           label: 'Home',       icon: Home },
   { to: '/explore',    label: 'Explore',    icon: Globe },
+  { to: '/map',        label: 'Map',        icon: Map },
   { to: '/calculator', label: 'Calculator', icon: Calculator },
   { to: '/compare',    label: 'Compare',    icon: BarChart2 },
   { to: '/hotels',     label: 'Hotels',     icon: Hotel },
-  { to: '/tips',       label: 'Travel Tips',icon: BookOpen },
+  { to: '/tips',       label: 'Tips',       icon: BookOpen },
+  { to: '/dashboard',  label: 'Dashboard',  icon: LayoutDashboard },
 ]
 
 // All currencies supported by AppContext's exchangeRates map

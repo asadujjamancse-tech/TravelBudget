@@ -5,6 +5,7 @@ import { ThemeProvider } from './context/ThemeContext'
 import Navbar from './components/layout/Navbar'
 import ScrollToTop from './components/layout/ScrollToTop'
 import BackToTop from './components/layout/BackToTop'
+import AIChatAssistant from './components/chat/AIChatAssistant'
 import Home from './pages/Home'
 import Explore from './pages/Explore'
 import CountryDetail from './pages/CountryDetail'
@@ -16,6 +17,8 @@ import TravelTips from './pages/TravelTips'
 import About from './pages/About'
 import Contact from './pages/Contact'
 import Favorites from './pages/Favorites'
+import WorldMap from './pages/WorldMap'
+import Dashboard from './pages/Dashboard'
 import NotFound from './pages/NotFound'
 
 function AppRoutes() {
@@ -34,6 +37,8 @@ function AppRoutes() {
         <Route path="/about"         element={<About />} />
         <Route path="/contact"       element={<Contact />} />
         <Route path="/favorites"     element={<Favorites />} />
+        <Route path="/map"           element={<WorldMap />} />
+        <Route path="/dashboard"     element={<Dashboard />} />
         {/* Catch-all: any unknown URL shows the 404 page instead of a blank screen */}
         <Route path="*"              element={<NotFound />} />
       </Routes>
@@ -51,8 +56,9 @@ export default function App() {
           <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
             <Navbar />
             <AppRoutes />
-            {/* Global floating button — available on every page */}
+            {/* Global floating UI — available on every page */}
             <BackToTop />
+            <AIChatAssistant />
           </div>
         </BrowserRouter>
       </AppProvider>
