@@ -6,12 +6,18 @@ import { Search, Star, Utensils } from 'lucide-react'
 // DEPENDENCIES: @data/countries
 import { countries } from '@data/countries'
 import Footer from '@components/layout/Footer'
+import { usePageContext } from '@hooks/usePageContext'
 
 const PRICE_FILTERS = ['All', '$', '$$', '$$$', '$$$$']
 
 export default function Restaurants() {
   const [query, setQuery] = useState('')
   const [priceFilter, setPriceFilter] = useState('All')
+
+  usePageContext(
+    () => ({ currentPage: 'restaurants', activeFilters: { priceRange: priceFilter } }),
+    [priceFilter]
+  )
 
   const allRestaurants = useMemo(() =>
     countries.flatMap(c =>

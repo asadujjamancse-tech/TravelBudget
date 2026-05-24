@@ -9,6 +9,7 @@ import { Calculator, Plane, Bed, UtensilsCrossed, Train, MapPin, DollarSign, Dow
 import { countries } from '@data/countries'
 import { useApp } from '@context/AppContext'
 import Footer from '@components/layout/Footer'
+import { usePageContext } from '@hooks/usePageContext'
 
 const TIERS = ['backpacker', 'standard', 'luxury']
 const TIER_LABELS = { backpacker: '🎒 Backpacker', standard: '✈️ Standard', luxury: '👑 Luxury' }
@@ -25,6 +26,18 @@ export default function BudgetCalculator() {
   const { currencySymbol, convertCurrency } = useApp()
 
   const country = useMemo(() => countries.find(c => c.id === selectedCountry), [selectedCountry])
+
+  // budgetTier and travelDays are SESSION-level — they persist after leaving this page
+  // so the AI can say "based on your 7-day standard trip..." anywhere in the app.
+  usePageContext(
+    () => ({
+      currentPage: 'calculator',
+      budgetTier: tier,
+      travelDays: days,
+      selectedCountry: country || null,
+    }),
+    [tier, days, country?.id]
+  )
 
   const budget = useMemo(() => {
     if (!country) return null

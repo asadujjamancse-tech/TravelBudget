@@ -7,6 +7,7 @@ import { Search, Star, MapPin } from 'lucide-react'
 import { countries } from '@data/countries'
 import { useApp } from '@context/AppContext'
 import Footer from '@components/layout/Footer'
+import { usePageContext } from '@hooks/usePageContext'
 
 const TYPE_FILTERS = ['All', 'luxury', 'standard', 'budget']
 
@@ -14,6 +15,12 @@ export default function Hotels() {
   const [query, setQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState('All')
   const { currencySymbol, convertCurrency } = useApp()
+
+  // Report hotel type filter so AI can answer "show me budget hotels" in context
+  usePageContext(
+    () => ({ currentPage: 'hotels', activeFilters: { type: typeFilter } }),
+    [typeFilter]
+  )
 
   const allHotels = useMemo(() =>
     countries.flatMap(c =>

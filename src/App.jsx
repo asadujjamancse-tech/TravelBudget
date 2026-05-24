@@ -4,8 +4,9 @@
 
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
-import { AppProvider }  from '@context/AppContext'
-import { ThemeProvider } from '@context/ThemeContext'
+import { AppProvider }      from '@context/AppContext'
+import { ThemeProvider }    from '@context/ThemeContext'
+import { AIContextProvider } from '@context/AIContext'
 
 // Layout & global overlays (rendered on every page)
 import Navbar          from '@components/layout/Navbar'
@@ -58,6 +59,9 @@ export default function App() {
   return (
     <ThemeProvider>
       <AppProvider>
+        {/* AIContextProvider must be inside BrowserRouter's siblings but wraps the
+            chat assistant so pages inside BrowserRouter can feed it context */}
+        <AIContextProvider>
         <BrowserRouter>
           {/* ScrollToTop must be inside BrowserRouter so it can read useLocation */}
           <ScrollToTop />
@@ -69,6 +73,7 @@ export default function App() {
             <AIChatAssistant />
           </div>
         </BrowserRouter>
+        </AIContextProvider>
       </AppProvider>
     </ThemeProvider>
   )

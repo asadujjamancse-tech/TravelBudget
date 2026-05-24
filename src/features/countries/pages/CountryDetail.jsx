@@ -10,6 +10,7 @@ import {
 // DEPENDENCIES: @data/countries, @context/AppContext, country sub-components (within feature)
 import { getCountryById } from '@data/countries'
 import { useApp } from '@context/AppContext'
+import { usePageContext } from '@hooks/usePageContext'
 import BudgetChart from '../components/BudgetChart'
 import HotelCard from '../components/HotelCard'
 import RestaurantCard from '../components/RestaurantCard'
@@ -20,6 +21,14 @@ export default function CountryDetail() {
   const { id } = useParams()
   const country = getCountryById(id)
   const { isFavorite, toggleFavorite, addToCompare, compareList } = useApp()
+
+  // Feed the full country object into the AI context so the assistant can answer
+  // questions like "cheap food?" or "hotels?" without requiring the country name.
+  // Dep on country.id (not the object) avoids infinite re-runs.
+  usePageContext(
+    () => ({ currentPage: 'country-detail', selectedCountry: country || null }),
+    [country?.id]
+  )
 
   if (!country) {
     return (

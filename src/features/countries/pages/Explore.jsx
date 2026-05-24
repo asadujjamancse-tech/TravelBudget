@@ -8,6 +8,7 @@ import { Search, SlidersHorizontal, X } from 'lucide-react'
 import { countries, continents, allTags } from '@data/countries'
 import CountryCard from '../components/CountryCard'
 import Footer from '@components/layout/Footer'
+import { usePageContext } from '@hooks/usePageContext'
 
 export default function Explore() {
   const [searchParams] = useSearchParams()
@@ -41,6 +42,13 @@ export default function Explore() {
 
   const clearAll = () => { setQuery(''); setContinent('All'); setBudget('All'); setSelectedTags([]) }
   const hasFilters = query || continent !== 'All' || budget !== 'All' || selectedTags.length > 0
+
+  // Report active filters so the AI can give scoped answers like
+  // "cheapest in Asia" when the user already has Asia selected.
+  usePageContext(
+    () => ({ currentPage: 'explore', activeFilters: { continent, budget, tags: selectedTags, query } }),
+    [continent, budget, selectedTags.join(','), query]
+  )
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 pt-20">
