@@ -14,11 +14,16 @@ const navLinks = [
   { to: '/tips',       label: 'Travel Tips',icon: BookOpen },
 ]
 
+// All currencies supported by AppContext's exchangeRates map
+const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'AED', 'INR']
+
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const { dark, toggle } = useTheme()
-  const { favorites } = useApp()
+  // Pull currency state from global AppContext so any page that calls
+  // convertCurrency() / currencySymbol immediately reflects the user's choice
+  const { favorites, currency, setCurrency } = useApp()
   const location = useLocation()
 
   useEffect(() => {
@@ -78,6 +83,26 @@ export default function Navbar() {
 
             {/* Right Actions */}
             <div className="flex items-center gap-2">
+              {/* Currency selector — changes the global currency used by all pages */}
+              <select
+                value={currency}
+                onChange={e => setCurrency(e.target.value)}
+                aria-label="Select currency"
+                className={`hidden sm:block text-xs font-semibold rounded-lg px-2 py-1.5 border
+                  focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer
+                  transition-all duration-200
+                  ${scrolled || !isHome
+                    ? 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                    : 'bg-white/10 border-white/20 text-white backdrop-blur-sm'
+                  }`}
+              >
+                {CURRENCIES.map(c => (
+                  <option key={c} value={c} className="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                    {c}
+                  </option>
+                ))}
+              </select>
+
               {/* Theme Toggle */}
               <button
                 onClick={toggle}
@@ -157,7 +182,22 @@ export default function Navbar() {
                   </Link>
                 )
               })}
-              <div className="pt-2 border-t border-slate-200 dark:border-slate-700 mt-2">
+              <div className="pt-2 border-t border-slate-200 dark:border-slate-700 mt-2 space-y-2">
+                {/* Mobile currency picker */}
+                <div className="flex items-center justify-between px-4 py-2">
+                  <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Currency</span>
+                  <select
+                    value={currency}
+                    onChange={e => setCurrency(e.target.value)}
+                    className="text-sm font-semibold rounded-lg px-3 py-1.5 border
+                      bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700
+                      text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  >
+                    {CURRENCIES.map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
                 <Link to="/calculator" className="btn-primary w-full justify-center py-3">
                   Plan Your Trip
                 </Link>

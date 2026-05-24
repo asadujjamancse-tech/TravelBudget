@@ -9,6 +9,8 @@ export const travelTips = [
     excerpt: 'Master these insider techniques to consistently find flights at 40-60% below the average price.',
     content: 'Set price alerts, use incognito mode, book 6-8 weeks in advance for domestic and 3-6 months for international. Consider nearby airports, fly mid-week, and use a flight comparison tool like Google Flights to track price history.',
     tags: ['flights', 'budget', 'money-saving'],
+    // Shown in the "Featured" hero row on the Tips page
+    featured: true,
   },
   {
     id: 2,
@@ -42,6 +44,7 @@ export const travelTips = [
     excerpt: 'The best travel meals aren\'t in tourist restaurants — follow these tips to discover authentic cuisine at local prices.',
     content: 'Eat where locals eat — look for restaurants without English menus out front. Visit morning markets for breakfast, seek out lunch specials (many fine restaurants offer affordable set lunches), and explore street food safely by looking for high turnover stalls.',
     tags: ['food', 'budget', 'local-experience'],
+    featured: true,
   },
   {
     id: 5,
@@ -75,6 +78,7 @@ export const travelTips = [
     excerpt: 'Bali, Lisbon, Medellín, Chiang Mai — these cities offer fast WiFi, affordable coworking spaces, and incredible quality of life.',
     content: 'The top cities for digital nomads in 2025: Bali (Canggu), Lisbon, Medellín, Chiang Mai, Tbilisi, Buenos Aires, Playa del Carmen, Cape Town, Tallinn, and Kuala Lumpur. Key factors: reliable internet, coworking options, visa length, cost of living, and community.',
     tags: ['digital-nomad', 'remote-work', 'lifestyle'],
+    featured: true,
   },
   {
     id: 8,
