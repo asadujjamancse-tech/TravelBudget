@@ -96,3 +96,15 @@
     animation: gradientShift 6s ease infinite;
   }
 }
+
+/* ── Map marker animations (used by WorldMap's divIcon HTML strings) ── */
+@keyframes mapPulse {
+  0%, 100% { transform: scale(1);   opacity: 0.3; }
+  50%       { transform: scale(1.8); opacity: 0.08; }
+}
+@keyframes mapPing {
+  0%   { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+.map-pin-pulse { animation: mapPulse 2.2s ease-in-out infinite; }
+.map-pin-ping  { animation: mapPing  1.4s cubic-bezier(0, 0, 0.2, 1) infinite; }
