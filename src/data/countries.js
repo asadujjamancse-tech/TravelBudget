@@ -1,4 +1,6 @@
-const img = (id) => `https://images.unsplash.com/photo-${id}?w=800&auto=format&fit=crop&q=80`
+// crop=entropy picks the most visually interesting region (avoids dark corners)
+// h=560 enforces consistent 16:9-ish aspect ratio for all cards
+const img = (id) => `https://images.unsplash.com/photo-${id}?w=800&h=560&auto=format&fit=crop&crop=entropy&q=85`
 
 export const countries = [
   {
@@ -167,7 +169,7 @@ export const countries = [
   },
   {
     id: 'iceland', name: 'Iceland', continent: 'Europe', flag: '🇮🇸',
-    image: img('1476610182048-b716b8518aae'), capital: 'Reykjavik',
+    image: img('1504893524553-b522f30b37d0'), capital: 'Reykjavik',
     language: 'Icelandic', timezone: 'GMT (UTC+0)', population: '370K',
     currency: { code: 'ISK', symbol: 'kr', rateToUSD: 0.0072 },
     safety: 'high',
@@ -208,7 +210,7 @@ export const countries = [
   },
   {
     id: 'portugal', name: 'Portugal', continent: 'Europe', flag: '🇵🇹',
-    image: img('1555881400-74d7acaacd2b'), capital: 'Lisbon',
+    image: img('1558618666-fcd25c85cd64'), capital: 'Lisbon',
     language: 'Portuguese', timezone: 'WET (UTC+0)', population: '10M',
     currency: { code: 'EUR', symbol: '€', rateToUSD: 1.08 },
     safety: 'high',
@@ -249,7 +251,7 @@ export const countries = [
   },
   {
     id: 'japan', name: 'Japan', continent: 'Asia', flag: '🇯🇵',
-    image: img('1480796927426-3308e9062a91'), capital: 'Tokyo',
+    image: img('1540959733-6e109c0e0756'), capital: 'Tokyo',
     language: 'Japanese', timezone: 'JST (UTC+9)', population: '125M',
     currency: { code: 'JPY', symbol: '¥', rateToUSD: 0.0067 },
     safety: 'high',
@@ -290,7 +292,7 @@ export const countries = [
   },
   {
     id: 'thailand', name: 'Thailand', continent: 'Asia', flag: '🇹🇭',
-    image: img('1508009603885-50cf7c8dd0d5'), capital: 'Bangkok',
+    image: img('1528181304800-259b08848526'), capital: 'Bangkok',
     language: 'Thai', timezone: 'ICT (UTC+7)', population: '70M',
     currency: { code: 'THB', symbol: '฿', rateToUSD: 0.028 },
     safety: 'medium',
@@ -331,7 +333,7 @@ export const countries = [
   },
   {
     id: 'bali', name: 'Bali', continent: 'Asia', flag: '🇮🇩',
-    image: img('1537996194471-e657df975ab4'), capital: 'Denpasar',
+    image: img('1555217100097-7f0d8dc7b28c'), capital: 'Denpasar',
     language: 'Balinese / Indonesian', timezone: 'WITA (UTC+8)', population: '4.2M',
     currency: { code: 'IDR', symbol: 'Rp', rateToUSD: 0.000064 },
     safety: 'medium',

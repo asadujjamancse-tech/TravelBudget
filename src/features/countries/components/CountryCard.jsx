@@ -28,6 +28,10 @@ export default function CountryCard({ country, index = 0 }) {
           alt={country.name}
           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
           loading="lazy"
+          onError={(e) => {
+            e.target.onerror = null
+            e.target.src = `https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=800&h=560&auto=format&fit=crop&q=85`
+          }}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
 
